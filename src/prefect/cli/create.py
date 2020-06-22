@@ -7,7 +7,7 @@ from prefect.utilities.exceptions import ClientError
 @click.group(hidden=True)
 def create():
     """
-    Create commands that refer to mutations of Prefect Cloud metadata.
+    Create commands that refer to mutations of Prefect API metadata.
 
     \b
     Usage:
@@ -19,12 +19,12 @@ def create():
 
     \b
     Examples:
-        $ prefect create project "My Project"
-        My Project created
+        $ prefect create project "Hello, World!"
+        Hello, World! created
 
     \b
-        $ prefect create project My-Project --description "My description"
-        My-Project created
+        $ prefect create project "Hello, World!" --description "My description"
+        Hello, World! created
     """
 
 
@@ -33,7 +33,7 @@ def create():
 @click.option("--description", "-d", help="Project description to create", hidden=True)
 def project(name, description):
     """
-    Create projects in Prefect Cloud that organize flows.
+    Create projects with the Prefect API that organize flows.
 
     \b
     Arguments:

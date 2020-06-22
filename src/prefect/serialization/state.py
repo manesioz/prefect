@@ -23,11 +23,11 @@ def get_safe(obj: state.State, context: dict) -> Any:
     safe way prior to serialization (if they want the result to be avaiable post-serialization).
     """
     if context.get("attr") == "_result":
+        if getattr(obj._result, "location", None) is not None:
+            return obj._result
         return obj._result.safe_value  # type: ignore
     value = context.get("value", result.NoResult)
-    if value is None:
-        return value
-    return value.safe_value
+    return value
 
 
 class BaseStateSchema(ObjectSchema):
@@ -57,7 +57,7 @@ class PendingSchema(BaseStateSchema):
 
 
 class MetaStateSchema(BaseStateSchema):
-    state = fields.Nested("StateSchema", allow_none=True)
+    state = fields.Nested("prefect.serialization.state.StateSchema", allow_none=True)
 
 
 class ClientFailedSchema(MetaStateSchema):
@@ -124,6 +124,7 @@ class CachedSchema(SuccessSchema):
 
     cached_parameters = JSONCompatible(allow_none=True)
     cached_result_expiration = fields.DateTime(allow_none=True)
+    hashed_inputs = fields.Dict(key=fields.Str(), values=fields.Str(), allow_none=True)
 
 
 class MappedSchema(SuccessSchema):
@@ -132,7 +133,7 @@ class MappedSchema(SuccessSchema):
         object_class = state.Mapped
 
     # though this field is excluded from serialization, it must be present in the schema
-    map_states = fields.Nested("StateSchema", many=True)
+    map_states = fields.Nested("prefect.serialization.state.StateSchema", many=True)
     n_map_states = fields.Integer()
 
     @post_load
@@ -160,6 +161,11 @@ class TimedOutSchema(FinishedSchema):
 class TriggerFailedSchema(FailedSchema):
     class Meta:
         object_class = state.TriggerFailed
+
+
+class ValidationFailedSchema(FailedSchema):
+    class Meta:
+        object_class = state.ValidationFailed
 
 
 class SkippedSchema(SuccessSchema):
@@ -199,4 +205,5 @@ class StateSchema(OneOfSchema):
         "Success": SuccessSchema,
         "TimedOut": TimedOutSchema,
         "TriggerFailed": TriggerFailedSchema,
+        "ValidationFailed": ValidationFailedSchema,
     }

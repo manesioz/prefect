@@ -41,7 +41,22 @@ plus_one.run(2)  # 3
 
 :::
 
-Tasks take a variety of arguments that may be provided either to the `Task` class constructor or the `@task` decorator. For a complete description, see the [Task API docs](/api/latest/core/task.html).
+Tasks allow a great deal of customization via arguments that may be provided to either the `Task` class constructor or the `@task` decorator. Examples include retry behavior, triggers, names, tags, and more. For a complete description, see the [Task API docs](/api/latest/core/task.html).
+
+When using the `@task` decorator, you can override arguments on a per-task basis by passing them to a special `task_args` keyword argument:
+
+```python
+@task(name="a")
+def add_one(x):
+    return x + 1
+
+with Flow("Add One") as flow:
+    a = add_one(1)
+    b = add_one(2, task_args=dict(name="b"))
+
+assert a.name == "a"
+assert b.name == "b"
+```
 
 ::: tip How big should a task be?
 People often wonder how much code to put in each task.
@@ -225,7 +240,7 @@ def my_task():
 
 ### Slug
 
-Slugs are similar to ids, because Prefect will not allow two tasks with the same slug to both be in the same flow. Therefore, a slug can serve as an optional human-readable unique identifier. If not provided, it will automatically be generated as a UUID.
+Slugs are similar to ids, because Prefect will not allow two tasks with the same slug to both be in the same flow. Therefore, a slug can serve as an optional human-readable unique identifier. If not provided, it will automatically be generated based on the task name, its tags, and the order in which it was added to the Flow.
 
 ```python
 Task(slug="my-task")

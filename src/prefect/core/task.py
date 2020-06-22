@@ -1,7 +1,6 @@
-import collections
+import collections.abc
 import copy
 import inspect
-import uuid
 import warnings
 from datetime import timedelta
 from typing import (
@@ -12,13 +11,12 @@ from typing import (
     Iterable,
     List,
     Mapping,
-    Set,
-    Tuple,
-    Union,
+    Optional,
 )
 
 import prefect
 import prefect.engine.cache_validators
+from prefect.engine.results import ResultHandlerResult
 import prefect.engine.signals
 import prefect.triggers
 from prefect.utilities import logging
@@ -27,8 +25,10 @@ from prefect.utilities.tasks import unmapped
 
 if TYPE_CHECKING:
     from prefect.core.flow import Flow  # pylint: disable=W0611
-    from prefect.engine.result_handlers import ResultHandler
+    from prefect.engine.result import Result  # pylint: disable=W0611
+    from prefect.engine.result_handlers import ResultHandler  # pylint: disable=W0611
     from prefect.engine.state import State  # pylint: disable=W0611
+    from prefect.core import Edge  # pylint: disable=W0611
 
 VAR_KEYWORD = inspect.Parameter.VAR_KEYWORD
 
@@ -115,35 +115,51 @@ class Task(metaclass=SignatureValidator):
 
     Args:
         - name (str, optional): The name of this task
-        - slug (str, optional): The slug for this task. Slugs are required and must be unique
-            within any flow; if not provided a random UUID will be generated.
+        - slug (str, optional): The slug for this task. Slugs provide a stable ID for tasks so that
+            the Prefect API can identify task run states. If a slug is not provided, one will be generated
+            automatically once the task is added to a Flow.
         - tags ([str], optional): A list of tags for this task
         - max_retries (int, optional): The maximum amount of times this task can be retried
         - retry_delay (timedelta, optional): The amount of time to wait until task is retried
         - timeout (int, optional): The amount of time (in seconds) to wait while
-            running this task before a timeout occurs; note that sub-second resolution is not supported
-        - trigger (callable, optional): a function that determines whether the task should run, based
-                on the states of any upstream tasks.
+            running this task before a timeout occurs; note that sub-second
+            resolution is not supported
+        - trigger (callable, optional): a function that determines whether the
+            task should run, based on the states of any upstream tasks.
         - skip_on_upstream_skip (bool, optional): if `True`, if any immediately
-                upstream tasks are skipped, this task will automatically be skipped as well,
-                regardless of trigger. By default, this prevents tasks from attempting to use either state or data
-                from tasks that didn't run. If `False`, the task's trigger will be called as normal,
-                with skips considered successes. Defaults to `True`.
-        - cache_for (timedelta, optional): The amount of time to maintain a cache
+            upstream tasks are skipped, this task will automatically be skipped as
+            well, regardless of trigger. By default, this prevents tasks from
+            attempting to use either state or data from tasks that didn't run. If
+            `False`, the task's trigger will be called as normal, with skips
+            considered successes. Defaults to `True`.
+        - cache_for (timedelta, optional, DEPRECATED): The amount of time to maintain a cache
             of the outputs of this task.  Useful for situations where the containing Flow
             will be rerun multiple times, but this task doesn't need to be.
-        - cache_validator (Callable, optional): Validator that will determine
+        - cache_validator (Callable, optional, DEPRECATED): Validator that will determine
             whether the cache for this task is still valid (only required if `cache_for`
             is provided; defaults to `prefect.engine.cache_validators.duration_only`)
-        - cache_key (str, optional): if provided, a `cache_key` serves as a unique identifier for this Task's cache, and can
-            be shared across both Tasks _and_ Flows; if not provided, the Task's _name_ will be used if running locally, or the
-            Task's database ID if running in Cloud
+        - cache_key (str, optional, DEPRECATED): if provided, a `cache_key`
+            serves as a unique identifier for this Task's cache, and can be shared
+            across both Tasks _and_ Flows; if not provided, the Task's _name_ will
+            be used if running locally, or the Task's database ID if running in
+            Cloud
         - checkpoint (bool, optional): if this Task is successful, whether to
-            store its result using the `result_handler` available during the run; Also note that
-            checkpointing will only occur locally if `prefect.config.flows.checkpointing` is set to `True`
-        - result_handler (ResultHandler, optional): the handler to use for
-            retrieving and storing state results during execution; if not provided, will default to the
-            one attached to the Flow
+            store its result using the `result_handler` available during the run;
+            Also note that checkpointing will only occur locally if
+            `prefect.config.flows.checkpointing` is set to `True`
+        - result_handler (ResultHandler, optional, DEPRECATED): the handler to
+            use for retrieving and storing state results during execution; if not
+            provided, will default to the one attached to the Flow
+        - result (Result, optional): the result instance used to retrieve and
+            store task results during execution
+        - target (Union[str, Callable], optional): location to check for task Result. If a result
+            exists at that location then the task run will enter a cached state.
+            `target` strings can be templated formatting strings which will be
+            formatted at runtime with values from `prefect.context`. If a callable function
+            is provided, it should have signature `callable(**kwargs) -> str` and at write
+            time all formatting kwargs will be passed and a fully formatted location is
+            expected as the return value.  Can be used for string formatting logic that
+            `.format(**kwargs)` doesn't support
         - state_handlers (Iterable[Callable], optional): A list of state change handlers
             that will be called whenever the task changes state, providing an
             opportunity to inspect or modify the new state. The handler
@@ -152,8 +168,9 @@ class Task(metaclass=SignatureValidator):
                 `state_handler(task: Task, old_state: State, new_state: State) -> Optional[State]`
             If multiple functions are passed, then the `new_state` argument will be the
             result of the previous handler.
-        - on_failure (Callable, optional): A function with signature `fn(task: Task, state: State) -> None`
-            with will be called anytime this Task enters a failure state
+        - on_failure (Callable, optional): A function with signature
+            `fn(task: Task, state: State) -> None` that will be called anytime this
+            Task enters a failure state
         - log_stdout (bool, optional): Toggle whether or not to send stdout messages to
             the Prefect logger. Defaults to `False`.
 
@@ -173,7 +190,7 @@ class Task(metaclass=SignatureValidator):
         max_retries: int = None,
         retry_delay: timedelta = None,
         timeout: int = None,
-        trigger: Callable[[Set["State"]], bool] = None,
+        trigger: Callable[[Dict["Edge", "State"]], bool] = None,
         skip_on_upstream_skip: bool = True,
         cache_for: timedelta = None,
         cache_validator: Callable = None,
@@ -183,11 +200,13 @@ class Task(metaclass=SignatureValidator):
         state_handlers: List[Callable] = None,
         on_failure: Callable = None,
         log_stdout: bool = False,
+        result: "Result" = None,
+        target: str = None,
     ):
         self.name = name or type(self).__name__
-        self.slug = slug or str(uuid.uuid4())
+        self.slug = slug
 
-        self.logger = logging.get_logger("Task: {}".format(self.name))
+        self.logger = logging.get_logger(self.name)
 
         # avoid silently iterating over a string
         if isinstance(tags, str):
@@ -246,9 +265,33 @@ class Task(metaclass=SignatureValidator):
         )
         self.cache_validator = cache_validator or default_validator
         self.checkpoint = checkpoint
-        self.result_handler = result_handler
+        if result_handler:
+            warnings.warn(
+                "Result Handlers are deprecated; please use the new style Result classes instead."
+            )
+            self.result = ResultHandlerResult.from_result_handler(
+                result_handler
+            )  # type: Optional[Result]
+        else:
+            self.result = result
 
-        if state_handlers and not isinstance(state_handlers, collections.Sequence):
+        self.target = target
+
+        # if both a target and a result were provided, update the result location
+        # to point at the target
+        if self.target and self.result:
+            if (
+                getattr(self.result, "location", None)
+                and self.result.location != self.target
+            ):
+                warnings.warn(
+                    "Both `result.location` and `target` were provided. "
+                    "The `target` value will be used."
+                )
+            self.result = self.result.copy()
+            self.result.location = self.target
+
+        if state_handlers and not isinstance(state_handlers, collections.abc.Sequence):
             raise TypeError("state_handlers should be iterable.")
         self.state_handlers = state_handlers or []
         if on_failure is not None:
@@ -258,6 +301,13 @@ class Task(metaclass=SignatureValidator):
         self.auto_generated = False
 
         self.log_stdout = log_stdout
+
+        # if new task creations are being tracked, add this task
+        # this makes it possible to give guidance to users that forget
+        # to add tasks to a flow
+        if "_unused_task_tracker" in prefect.context:
+            if not isinstance(self, prefect.tasks.core.constants.Constant):
+                prefect.context._unused_task_tracker.add(self)
 
     def __repr__(self) -> str:
         return "<Task: {self.name}>".format(self=self)
@@ -325,9 +375,8 @@ class Task(metaclass=SignatureValidator):
 
         new = copy.copy(self)
 
-        # ensure new slug is provided
-        if "slug" not in task_args:
-            task_args["slug"] = str(uuid.uuid4())
+        if new.slug and "slug" not in task_args:
+            task_args["slug"] = new.slug + "-copy"
 
         # check task_args
         for attr, val in task_args.items():
@@ -338,11 +387,49 @@ class Task(metaclass=SignatureValidator):
             else:
                 setattr(new, attr, val)
 
+        # if both a target and a result were provided, update the result location
+        # to point at the target
+        if new.target and new.result:
+            if (
+                getattr(new.result, "location", None)
+                and new.result.location != new.target
+            ):
+                warnings.warn(
+                    "Both `result.location` and `target` were provided. "
+                    "The `target` value will be used."
+                )
+            new.result = new.result.copy()
+            new.result.location = new.target
+
         new.tags = copy.deepcopy(self.tags).union(set(new.tags))
         tags = set(prefect.context.get("tags", set()))
         new.tags.update(tags)
 
+        # if new task creations are being tracked, add this task
+        # this makes it possible to give guidance to users that forget
+        # to add tasks to a flow. We also remove the original task,
+        # as it has been "interacted" with and don't want spurious
+        # warnings
+        if "_unused_task_tracker" in prefect.context:
+            if self in prefect.context._unused_task_tracker:
+                prefect.context._unused_task_tracker.remove(self)
+            if not isinstance(new, prefect.tasks.core.constants.Constant):
+                prefect.context._unused_task_tracker.add(new)
+
         return new
+
+    @property
+    def __signature__(self) -> inspect.Signature:
+        """Dynamically generate the signature, replacing ``*args``/``**kwargs``
+        with parameters from ``run``"""
+        if not hasattr(self, "_cached_signature"):
+            sig = inspect.Signature.from_callable(self.run)
+            parameters = list(sig.parameters.values())
+            parameters.extend(EXTRA_CALL_PARAMETERS)
+            self._cached_signature = inspect.Signature(
+                parameters=parameters, return_annotation="Task"
+            )
+        return self._cached_signature
 
     def __call__(
         self,
@@ -1006,102 +1093,20 @@ class Task(metaclass=SignatureValidator):
         return prefect.tasks.core.operators.LessThanOrEqual().bind(self, other)
 
 
-class Parameter(Task):
-    """
-    A Parameter is a special task that defines a required flow input.
+# All keyword-only arguments to Task.__call__, used for dynamically generating
+# Signature objects for Task objects
+EXTRA_CALL_PARAMETERS = [
+    p
+    for p in inspect.Signature.from_callable(Task.__call__).parameters.values()
+    if p.kind == inspect.Parameter.KEYWORD_ONLY
+]
 
-    A parameter's "slug" is automatically -- and immutably -- set to the parameter name.
-    Flows enforce slug uniqueness across all tasks, so this ensures that the flow has
-    no other parameters by the same name.
+# DEPRECATED - this is to allow backwards-compatible access to Parameters
+# https://github.com/PrefectHQ/prefect/pull/2758
+from .parameter import Parameter as _Parameter
 
-    Args:
-        - name (str): the Parameter name.
-        - required (bool, optional): If True, the Parameter is required and the default
-            value is ignored.
-        - default (any, optional): A default value for the parameter. If the default
-            is not None, the Parameter will not be required.
-        - tags ([str], optional): A list of tags for this parameter
 
-    """
-
-    def __init__(
-        self,
-        name: str,
-        default: Any = None,
-        required: bool = True,
-        tags: Iterable[str] = None,
-    ):
-        if default is not None:
-            required = False
-
-        self.required = required
-        self.default = default
-
-        from prefect.engine.result_handlers import JSONResultHandler
-
-        super().__init__(
-            name=name,
-            slug=name,
-            tags=tags,
-            result_handler=JSONResultHandler(),
-            checkpoint=True,
-        )
-
-    def __repr__(self) -> str:
-        return "<Parameter: {self.name}>".format(self=self)
-
-    def __call__(self, flow: "Flow" = None) -> "Parameter":  # type: ignore
-        """
-        Calling a Parameter adds it to a flow.
-
-        Args:
-            - flow (Flow, optional): The flow to set dependencies on, defaults to the current
-                flow in context if no flow is specified
-
-        Returns:
-            - Task: a new Task instance
-
-        """
-        result = super().bind(flow=flow)
-        assert isinstance(result, Parameter)  # mypy assert
-        return result
-
-    def copy(self, name: str, **task_args: Any) -> "Task":  # type: ignore
-        """
-        Creates a copy of the Parameter with a new name.
-
-        Args:
-            - name (str): the new Parameter name
-            - **task_args (dict, optional): a dictionary of task attribute keyword arguments,
-                these attributes will be set on the new copy
-
-        Raises:
-            - AttributeError: if any passed `task_args` are not attributes of the original
-
-        Returns:
-            - Parameter: a copy of the current Parameter, with a new name and any attributes
-                updated from `task_args`
-        """
-        return super().copy(name=name, slug=name, **task_args)
-
-    def run(self) -> Any:
-        params = prefect.context.get("parameters") or {}
-        if self.required and self.name not in params:
-            self.logger.debug(
-                'Parameter "{}" was required but not provided.'.format(self.name)
-            )
-            raise prefect.engine.signals.FAIL(
-                'Parameter "{}" was required but not provided.'.format(self.name)
-            )
-        return params.get(self.name, self.default)
-
-    # Serialization ------------------------------------------------------------
-
-    def serialize(self) -> Dict[str, Any]:
-        """
-        Creates a serialized representation of this parameter
-
-        Returns:
-            - dict representing this parameter
-        """
-        return prefect.serialization.task.ParameterSchema().dump(self)
+class Parameter(_Parameter):
+    def __new__(cls, *args, **kwargs):  # type: ignore
+        warnings.warn("`Parameter` has moved, please import as `prefect.Parameter`")
+        return super().__new__(cls)

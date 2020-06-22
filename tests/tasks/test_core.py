@@ -46,6 +46,31 @@ class TestFunctionTask:
         f = FunctionTask(fn=my_fn, name="test")
         assert f.name == "test"
 
+    def test_function_task_docstring(self):
+        def my_fn():
+            """An example docstring."""
+            pass
+
+        # Original docstring available on class
+        assert "FunctionTask" in FunctionTask.__doc__
+
+        # Wrapped function is docstring on instance
+        f = FunctionTask(fn=my_fn)
+        assert f.__doc__ == my_fn.__doc__
+
+        # Except when no docstring on wrapped function
+        f = FunctionTask(fn=lambda x: x + 1)
+        assert "FunctionTask" in f.__doc__
+
+    def test_function_task_sets__wrapped__(self):
+        def my_fn():
+            """An example function"""
+            pass
+
+        t = FunctionTask(fn=my_fn)
+        assert t.__wrapped__ == my_fn
+        assert not hasattr(FunctionTask, "__wrapped__")
+
 
 class TestCollections:
     def test_list_returns_a_list(self):
@@ -241,3 +266,17 @@ class TestCollections:
 
         assert len(f.tasks) == 10
         assert state.result[identity].result == dict(a=[1, dict(y=2)], b=(2, set([1])))
+
+    def test_list_maintains_sort_order_for_more_than_10_items(self):
+        # https://github.com/PrefectHQ/prefect/issues/2451
+        l = collections.List()
+        with Flow(name="test") as f:
+            l.bind(*list(range(15)))
+        assert f.run().result[l].result == list(range(15))
+
+    def test_tuple_maintains_sort_order_for_more_than_10_items(self):
+        # https://github.com/PrefectHQ/prefect/issues/2451
+        t = collections.Tuple()
+        with Flow(name="test") as f:
+            t.bind(*list(range(15)))
+        assert f.run().result[t].result == tuple(range(15))

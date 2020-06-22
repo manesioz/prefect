@@ -53,6 +53,7 @@ classes = [
 title = "Filters"
 module = "prefect.schedules.filters"
 functions = [
+    "at_time",
     "between_datetimes",
     "between_dates",
     "between_times",
@@ -82,7 +83,12 @@ classes = ["Flow"]
 [pages.core.task]
 title = "Task"
 module = "prefect.core.task"
-classes = ["Task", "Parameter"]
+classes = ["Task"]
+
+[pages.core.parameters]
+title = "Parameter"
+module = "prefect.core.parameter"
+classes = ["Parameter"]
 
 [pages.engine.cache_validators]
 title = "Cache Validators"
@@ -112,6 +118,7 @@ classes = [
             "Failed",
             "Cancelled",
             "TriggerFailed",
+            "ValidationFailed",
             "TimedOut",
         ]
 
@@ -123,6 +130,7 @@ classes = [
             "FAIL",
             "LOOP",
             "TRIGGERFAIL",
+            "VALIDATIONFAIL",
             "SUCCESS",
             "RETRY",
             "SKIP",
@@ -153,6 +161,11 @@ title = "Results"
 module = "prefect.engine.result"
 classes = ["Result", "SafeResult", "NoResultType"]
 
+[pages.engine.results]
+title = "Result Subclasses"
+module = "prefect.engine.results"
+classes = ["PrefectResult", "GCSResult", "LocalResult", "S3Result", "AzureResult", "SecretResult", "ConstantResult"]
+
 [pages.engine.result_handlers]
 title = "Result Handlers"
 module = "prefect.engine.result_handlers"
@@ -171,12 +184,12 @@ classes = ["Docker", "Local", "S3", "GCS", "Azure"]
 [pages.environments.execution]
 title = "Execution Environments"
 module = "prefect.environments.execution"
-classes = ["DaskKubernetesEnvironment", "FargateTaskEnvironment", "KubernetesJobEnvironment", "LocalEnvironment", "RemoteEnvironment"]
+classes = ["DaskKubernetesEnvironment", "DaskCloudProviderEnvironment", "FargateTaskEnvironment", "KubernetesJobEnvironment", "LocalEnvironment"]
 
 [pages.tasks.control_flow]
 title = "Control Flow Tasks"
 module = "prefect.tasks.control_flow"
-classes = ["FilterTask"]
+classes = ["FilterTask", "case"]
 functions = ["switch", "ifelse", "merge"]
 
 [pages.tasks.airtable]
@@ -209,9 +222,9 @@ classes = ["DatasetCreateFromDelimitedFiles",
            "DatastoreGet",
            "DatastoreUpload"]
 
-[pages.tasks.cloud]
-title = "Cloud Tasks"
-module = "prefect.tasks.cloud"
+[pages.tasks.prefect]
+title = "Prefect Tasks"
+module = "prefect.tasks.prefect"
 classes = ["FlowRunTask"]
 
 [pages.tasks.github]
@@ -249,6 +262,11 @@ classes = [
         "ReplaceNamespacedService"
         ]
 
+[pages.tasks.dbt]
+title = "DBT Tasks"
+module = "prefect.tasks.dbt"
+classes = ["DbtShellTask"]
+
 [pages.tasks.docker]
 title = "Docker Tasks"
 module = "prefect.tasks.docker"
@@ -264,6 +282,7 @@ classes = [
         "ListContainers",
         "StartContainer",
         "StopContainer",
+        "RemoveContainer",
         "WaitOnContainer"
         ]
 
@@ -284,11 +303,31 @@ classes = [
         "BigQueryStreamingInsert",
         "CreateBigQueryTable"
         ]
+ 
+[pages.tasks.great_expectations]
+title = "Great Expectations Task"
+module = "prefect.tasks.great_expectations"
+classes = [
+        "RunGreatExpectationsCheckpoint",
+        ]
+
+[pages.tasks.gsheets]
+title = "Google Sheets Tasks"
+module = "prefect.tasks.gsheets"
+classes = [
+        "WriteGsheetRow",
+        "ReadGsheetRow",
+        ]
+
+[pages.tasks.jira]
+title = "Jira Tasks"
+module = "prefect.tasks.jira"
+classes = ["JiraTask", "JiraServiceDeskTask"]
 
 [pages.tasks.notifications]
 title = "Notification Tasks"
 module = "prefect.tasks.notifications"
-classes = ["EmailTask", "SlackTask"]
+classes = ["EmailTask", "SlackTask", "PushbulletTask"]
 
 [pages.tasks.postgres]
 title = "Postgres Tasks"
@@ -308,7 +347,7 @@ classes = ["ParseRSSFeed"]
 [pages.tasks.secrets]
 title = "Secret Tasks"
 module = "prefect.tasks.secrets"
-classes = ["Secret", "EnvVarSecret"]
+classes = ["SecretBase", "PrefectSecret", "EnvVarSecret"]
 
 [pages.tasks.snowflake]
 title = "Snowflake Tasks"

@@ -1,7 +1,8 @@
 """
 Utility functions for interacting with Google Cloud.
 """
-from google.cloud import bigquery, storage
+import prefect
+
 from google.oauth2.service_account import Credentials
 
 
@@ -20,6 +21,9 @@ def get_google_client(submodule, credentials: dict = None, project: str = None):
         - Client: an initialized and authenticated Google Client
     """
     Client = getattr(submodule, "Client")
+    credentials = credentials or prefect.context.get("secrets", {}).get(
+        "GCP_CREDENTIALS"
+    )
     if credentials is not None:
         credentials = Credentials.from_service_account_info(credentials)
         project = project or credentials.project_id
@@ -42,6 +46,8 @@ def get_storage_client(credentials: dict = None, project: str = None):
     Returns:
         - Client: an initialized and authenticated Google Client
     """
+    from google.cloud import storage
+
     return get_google_client(storage, credentials=credentials, project=project)
 
 
@@ -58,4 +64,6 @@ def get_bigquery_client(credentials: dict = None, project: str = None):
     Returns:
         - Client: an initialized and authenticated Google Client
     """
+    from google.cloud import bigquery
+
     return get_google_client(bigquery, credentials=credentials, project=project)

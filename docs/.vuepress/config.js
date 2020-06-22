@@ -1,5 +1,7 @@
-const sidebar73 = require('../api/0.7.3/sidebar')
 const sidebar81 = require('../api/0.8.1/sidebar')
+const sidebar98 = require('../api/0.9.8/sidebar')
+const sidebar107 = require('../api/0.10.7/sidebar')
+const sidebar115 = require('../api/0.11.5/sidebar')
 const glob = require('glob')
 
 // function for loading all MD files in a directory
@@ -67,15 +69,17 @@ module.exports = {
         link: '/core/'
       },
       {
-        text: 'Cloud',
-        link: '/cloud/'
+        text: 'Orchestration',
+        link: '/orchestration/'
       },
       {
         text: 'API Reference',
         items: [
-          { text: 'Latest (0.9.7)', link: '/api/latest/' },
+          { text: 'Latest (0.12.0)', link: '/api/latest/' },
+          { text: '0.11.5', link: '/api/0.11.5/' },
+          { text: '0.10.7', link: '/api/0.10.7/' },
+          { text: '0.9.8', link: '/api/0.9.8/' },
           { text: '0.8.1', link: '/api/0.8.1/' },
-          { text: '0.7.3', link: '/api/0.7.3/' },
           { text: 'Legacy', link: 'https://docs-legacy.prefect.io' }
         ]
       },
@@ -85,8 +89,10 @@ module.exports = {
       }
     ],
     sidebar: {
-      '/api/0.7.3/': sidebar73.sidebar,
       '/api/0.8.1/': sidebar81.sidebar,
+      '/api/0.9.8/': sidebar98.sidebar,
+      '/api/0.10.7/': sidebar107.sidebar,
+      '/api/0.11.5/': sidebar115.sidebar,
       '/api/latest/': [
         {
           title: 'API Reference',
@@ -143,8 +149,8 @@ module.exports = {
           children: getChildren('docs/api/latest', 'utilities')
         }
       ],
-      '/cloud/': [
-        '/cloud/',
+      '/orchestration/': [
+        '/orchestration/',
         {
           title: 'UI',
           collapsable: true,
@@ -158,7 +164,7 @@ module.exports = {
           ]
         },
         {
-          title: 'Cloud Concepts',
+          title: 'Concepts',
           collapsable: true,
           children: [
             'concepts/api',
@@ -166,9 +172,11 @@ module.exports = {
             'concepts/projects',
             'concepts/flows',
             'concepts/flow_runs',
+            'concepts/cloud_hooks',
             'concepts/secrets',
             'concepts/services',
             'concepts/tokens',
+            'concepts/roles',
             'concepts/task-concurrency-limiting'
           ]
         },
@@ -190,7 +198,8 @@ module.exports = {
           children: [
             'execution/overview',
             'execution/storage_options',
-            'execution/remote_environment',
+            'execution/local_environment',
+            'execution/dask_cloud_provider_environment',
             'execution/dask_k8s_environment',
             'execution/k8s_job_environment',
             'execution/fargate_task_environment',
@@ -213,6 +222,7 @@ module.exports = {
           collapsable: true,
           children: [
             'recipes/deployment',
+            'recipes/third_party_auth',
             'recipes/configuring_storage',
             'recipes/multi_flow_storage',
             'recipes/k8s_dask',
@@ -220,9 +230,14 @@ module.exports = {
           ]
         },
         {
+          title: 'Server',
+          collapsable: true,
+          children: ['server/telemetry']
+        },
+        {
           title: 'FAQ',
           collapsable: true,
-          children: getChildren('docs/cloud', 'faq')
+          children: getChildren('docs/orchestration', 'faq')
         }
       ],
       '/core/': [
@@ -298,6 +313,7 @@ module.exports = {
             'development/sprints'
           ]
         },
+        '/core/idioms/idioms',
         '/core/faq',
         '/core/community',
         '/core/code_of_conduct'

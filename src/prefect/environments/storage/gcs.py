@@ -4,7 +4,7 @@ import cloudpickle
 import pendulum
 from slugify import slugify
 
-from prefect.engine.result_handlers import GCSResultHandler
+from prefect.engine.results import GCSResult
 from prefect.environments.storage import Storage
 from prefect.utilities.exceptions import StorageError
 
@@ -32,9 +32,12 @@ class GCS(Storage):
             is only useful when storing a single Flow using this storage object.
         - project (str, optional): the google project where any GCS API requests are billed to;
             if not provided, the project will be inferred from your Google Cloud credentials.
+        - **kwargs (Any, optional): any additional `Storage` initialization options
     """
 
-    def __init__(self, bucket: str, key: str = None, project: str = None) -> None:
+    def __init__(
+        self, bucket: str, key: str = None, project: str = None, **kwargs: Any
+    ) -> None:
         self.flows = dict()  # type: Dict[str, str]
         self._flows = dict()  # type: Dict[str, "Flow"]
 
@@ -42,11 +45,11 @@ class GCS(Storage):
         self.key = key
         self.project = project
 
-        result_handler = GCSResultHandler(bucket=bucket)
-        super().__init__(result_handler=result_handler)
+        result = GCSResult(bucket=bucket)
+        super().__init__(result=result, **kwargs)
 
     @property
-    def labels(self) -> List[str]:
+    def default_labels(self) -> List[str]:
         return ["gcs-flow-storage"]
 
     def get_flow(self, flow_location: str) -> "Flow":
@@ -146,6 +149,7 @@ class GCS(Storage):
 
     @property
     def _gcs_client(self):  # type: ignore
-        from google.cloud import storage
+        from prefect.utilities.gcp import get_storage_client
 
-        return storage.Client(project=self.project)
+        client = get_storage_client(project=self.project)
+        return client

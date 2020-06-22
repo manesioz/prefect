@@ -10,7 +10,7 @@ Every run is initialized with the `Pending` state, meaning that it is waiting fo
 execution. During execution a run will enter a `Running` state. Finally, runs become `Finished`.
 """
 import datetime
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Mapping
 
 import pendulum
 
@@ -59,7 +59,10 @@ class State:
             self.context.setdefault("tags", list(prefect.context.task_tags))
 
     def __repr__(self) -> str:
-        return '<{}: "{}">'.format(type(self).__name__, self.message)
+        if self.message is not None:
+            return f'<{type(self).__name__}: "{self.message}">'
+        else:
+            return f"<{type(self).__name__}>"
 
     def __eq__(self, other: object) -> bool:
         """
@@ -67,7 +70,7 @@ class State:
         """
         if type(self) == type(other):
             assert isinstance(other, State)  # this assertion is here for MyPy only
-            eq = self._result.value == other._result.value  # type: ignore
+            eq = self.result == other.result  # type: ignore
             for attr in self.__dict__:
                 if attr.startswith("_") or attr in ["context", "message", "result"]:
                     continue
@@ -80,7 +83,7 @@ class State:
 
     @property
     def result(self) -> Any:
-        return self._result.value  # type: ignore
+        return getattr(self._result, "value", self._result)
 
     @result.setter
     def result(self, value: Any) -> None:
@@ -88,6 +91,63 @@ class State:
             self._result = value
         else:
             self._result = Result(value=value)
+
+    def load_result(self, result: Result = None) -> "State":
+        """
+        Given another Result instance, uses the current Result's `location` to create a fully hydrated `Result`
+        using the logic of the provided result.  This method is mainly intended to be used
+        by `TaskRunner` methods to hydrate deserialized Cloud results into fully functional `Result` instances.
+
+        Args:
+            - result (Result): the result instance to hydrate with `self.location`
+
+        Returns:
+            - State: the current state with a fully hydrated Result attached
+        """
+        if self.is_mapped():
+            return self
+
+        result_reader = result or self._result
+
+        known_location = self._result.location or getattr(result, "location", None)  # type: ignore
+        if self._result.value is None and known_location is not None:  # type: ignore
+            self._result = result_reader.read(known_location)  # type: ignore
+        return self
+
+    def load_cached_results(
+        self, results: Mapping[str, Optional[Result]] = None
+    ) -> "State":
+        """
+        Given another Result instance, uses the current Result's `location` to create a fully hydrated `Result`
+        using the logic of the provided result.  This method is mainly intended to be used
+        by `TaskRunner` methods to hydrate deserialized Cloud results into fully functional `Result` instances.
+
+        Args:
+            - results (Dict[str, Result]): a dictionary of result instances to hydrate `self.cached_inputs` with
+
+        Returns:
+            - State: the current state with a fully hydrated Result attached
+        """
+        results = results or dict()
+
+        result_readers = {
+            key: results.get(key, result) for key, result in self.cached_inputs.items()
+        }  # type: ignore
+
+        loaded_inputs = {}
+
+        for key, res in self.cached_inputs.items():
+            known_location = res.location or getattr(
+                result_readers[key], "location", None
+            )
+            if res.value is None and known_location is not None:
+                loaded_inputs[key] = result_readers[key].read(known_location)  # type: ignore
+            else:
+                loaded_inputs[key] = res
+
+        self.cached_inputs = loaded_inputs
+
+        return self
 
     @classmethod
     def children(cls) -> "List[Type[State]]":
@@ -319,6 +379,7 @@ class Scheduled(Pending):
     """
 
     color = "#ffab00"
+    start_time: Optional[datetime.datetime]
 
     def __init__(
         self,
@@ -354,7 +415,7 @@ class Paused(Scheduled):
             should be JSON compatible
     """
 
-    color = "#cfd8dc"
+    color = "#99a8e8"
 
     def __init__(
         self,
@@ -364,8 +425,6 @@ class Paused(Scheduled):
         cached_inputs: Dict[str, Result] = None,
         context: Dict[str, Any] = None,
     ):
-        if start_time is None:
-            start_time = pendulum.now().add(years=10)
 
         super().__init__(
             message=message,
@@ -374,6 +433,11 @@ class Paused(Scheduled):
             cached_inputs=cached_inputs,
             context=context,
         )
+
+        # override default logic to set start_time = now();
+        # have indefinite start_time instead
+        if start_time is None:
+            self.start_time = None
 
 
 class _MetaState(State):
@@ -506,7 +570,7 @@ class Resume(Scheduled):
             should be JSON compatible
     """
 
-    color = "#fb8532"
+    color = "#f58c0c"
 
 
 class Retrying(Scheduled):
@@ -665,6 +729,7 @@ class Cached(Success):
             expires and can no longer be used. Defaults to `None`
         - context (dict, optional): A dictionary of execution context information; values
             should be JSON compatible
+        - hashed_inputs (Dict[str, str], optional): a string hash of a dictionary of inputs
     """
 
     color = "#34d058"
@@ -677,10 +742,12 @@ class Cached(Success):
         cached_parameters: Dict[str, Any] = None,
         cached_result_expiration: datetime.datetime = None,
         context: Dict[str, Any] = None,
+        hashed_inputs: Dict[str, str] = None,
     ):
         super().__init__(
             message=message, result=result, context=context, cached_inputs=cached_inputs
         )
+        self.hashed_inputs = hashed_inputs
         self.cached_parameters = cached_parameters  # type: Optional[Dict[str, Any]]
         if cached_result_expiration is not None:
             cached_result_expiration = pendulum.instance(cached_result_expiration)
@@ -745,7 +812,7 @@ class Cancelled(Finished):
             should be JSON compatible
     """
 
-    color = "#c42800"
+    color = "#bdbdbd"
 
 
 class Failed(Finished):
@@ -796,6 +863,23 @@ class TimedOut(Failed):
 class TriggerFailed(Failed):
     """
     Finished state indicating failure due to trigger.
+
+    Args:
+        - message (str or Exception, optional): Defaults to `None`. A message about the
+            state, which could be an `Exception` (or [`Signal`](signals.html)) that caused it.
+        - result (Any, optional): Defaults to `None`. A data payload for the state.
+        - cached_inputs (dict): A dictionary of input keys to fully hydrated `Result`s.
+            Used / set if the Task requires retries.
+        - context (dict, optional): A dictionary of execution context information; values
+            should be JSON compatible
+    """
+
+    color = "#ff5131"
+
+
+class ValidationFailed(Failed):
+    """
+    Finished stated indicating failure due to failed result validation.
 
     Args:
         - message (str or Exception, optional): Defaults to `None`. A message about the

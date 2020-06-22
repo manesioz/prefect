@@ -91,22 +91,21 @@ def test_flow_information():
         tasks=[t1, t2],
         storage=prefect.environments.storage.Local(),
         schedule=prefect.schedules.Schedule(clocks=[]),
-        result_handler=prefect.engine.result_handlers.JSONResultHandler(),
+        result=prefect.engine.results.PrefectResult(),
     )
 
     flow_information = diagnostics.flow_information(flow)["flow_information"]
     assert flow_information
 
     # Type information
-    assert flow_information["environment"]["type"] == "RemoteEnvironment"
+    assert flow_information["environment"]["type"] == "LocalEnvironment"
     assert flow_information["storage"]["type"] == "Local"
-    assert flow_information["result_handler"]["type"] == "JSONResultHandler"
+    assert flow_information["result"]["type"] == "PrefectResult"
     assert flow_information["schedule"]["type"] == "Schedule"
     assert flow_information["task_count"] == 2
 
     # Kwargs presence check
     assert flow_information["environment"]["executor"] is True
-    assert flow_information["environment"]["executor_kwargs"] is False
     assert flow_information["environment"]["labels"] is False
     assert flow_information["environment"]["on_start"] is False
     assert flow_information["environment"]["on_exit"] is False
@@ -136,7 +135,7 @@ def test_diagnostic_info_with_flow_no_secrets(monkeypatch):
             tasks=[t1, t2],
             storage=prefect.environments.storage.Local(),
             schedule=prefect.schedules.Schedule(clocks=[]),
-            result_handler=prefect.engine.result_handlers.JSONResultHandler(),
+            result=prefect.engine.results.PrefectResult(),
         )
 
         monkeypatch.setenv("PREFECT__TEST", "VALUE" "NOT__PREFECT", "VALUE2")
@@ -157,15 +156,14 @@ def test_diagnostic_info_with_flow_no_secrets(monkeypatch):
         assert flow_information
 
         # Type information
-        assert flow_information["environment"]["type"] == "RemoteEnvironment"
+        assert flow_information["environment"]["type"] == "LocalEnvironment"
         assert flow_information["storage"]["type"] == "Local"
-        assert flow_information["result_handler"]["type"] == "JSONResultHandler"
+        assert flow_information["result"]["type"] == "PrefectResult"
         assert flow_information["schedule"]["type"] == "Schedule"
         assert flow_information["task_count"] == 2
 
         # Kwargs presence check
         assert flow_information["environment"]["executor"] is True
-        assert flow_information["environment"]["executor_kwargs"] is False
         assert flow_information["environment"]["labels"] is False
         assert flow_information["environment"]["on_start"] is False
         assert flow_information["environment"]["on_exit"] is False

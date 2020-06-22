@@ -15,7 +15,7 @@ spec:
       containers:
         - name: flow
           image: prefecthq/prefect:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-c"]
           args: ["prefect execute cloud-flow"]
           env:
@@ -25,6 +25,8 @@ spec:
               value: PREFECT__CLOUD__AUTH_TOKEN
             - name: PREFECT__CONTEXT__FLOW_RUN_ID
               value: PREFECT__CONTEXT__FLOW_RUN_ID
+            - name: PREFECT__CONTEXT__FLOW_ID
+              value: PREFECT__CONTEXT__FLOW_ID
             - name: PREFECT__CONTEXT__NAMESPACE
               value: PREFECT__CONTEXT__NAMESPACE
             - name: PREFECT__CLOUD__AGENT__LABELS

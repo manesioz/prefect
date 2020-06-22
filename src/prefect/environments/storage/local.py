@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from slugify import slugify
 
 import prefect
-from prefect.engine.result_handlers import LocalResultHandler
+from prefect.engine.results import LocalResult
 from prefect.environments.storage import Storage
 
 if TYPE_CHECKING:
@@ -29,9 +29,12 @@ class Local(Storage):
         - validate (bool, optional): a boolean specifying whether to validate the
             provided directory path; if `True`, the directory will be converted to an
             absolute path and created.  Defaults to `True`
+        - **kwargs (Any, optional): any additional `Storage` initialization options
     """
 
-    def __init__(self, directory: str = None, validate: bool = True) -> None:
+    def __init__(
+        self, directory: str = None, validate: bool = True, **kwargs: Any
+    ) -> None:
         directory = directory or os.path.join(prefect.config.home_dir, "flows")
         self.flows = dict()  # type: Dict[str, str]
         self._flows = dict()  # type: Dict[str, "prefect.core.flow.Flow"]
@@ -44,12 +47,15 @@ class Local(Storage):
             abs_directory = directory
 
         self.directory = abs_directory
-        result_handler = LocalResultHandler(self.directory, validate=validate)
-        super().__init__(result_handler=result_handler)
+        result = LocalResult(self.directory, validate_dir=validate)
+        super().__init__(result=result, **kwargs)
 
     @property
-    def labels(self) -> List[str]:
-        return [socket.gethostname()]
+    def default_labels(self) -> List[str]:
+        if self.add_default_labels:
+            return [socket.gethostname()]
+        else:
+            return []
 
     def get_flow(self, flow_location: str) -> "Flow":
         """

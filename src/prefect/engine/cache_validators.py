@@ -13,6 +13,7 @@ Note that _all_ validators take into account cache expiration.
 
 A cache validator returns `True` if the cache is still valid, and `False` otherwise.
 """
+from dask.base import tokenize
 from typing import Any, Callable, Dict, Iterable
 
 import pendulum
@@ -88,6 +89,11 @@ def all_inputs(
     """
     if duration_only(state, inputs, parameters) is False:
         return False
+    elif getattr(state, "hashed_inputs", None) is not None:
+        if state.hashed_inputs == {key: tokenize(val) for key, val in inputs.items()}:
+            return True
+        else:
+            return False
     elif {key: res.value for key, res in state.cached_inputs.items()} == inputs:
         return True
     else:
@@ -152,10 +158,13 @@ def partial_parameters_only(validate_on: Iterable[str] = None,) -> Callable:
 
     state1 = f.run(parameters=dict(nrows=1000, runtime=pendulum.now('utc')))
 
-    ## the second run will use the cache contained within state1.result[db_state]
+    ## the second run will use the cache contained within prefect.context.caches
     ## even though `runtime` has changed
-    state2 = f.run(parameters=dict(nrows=1000, runtime=pendulum.now('utc')),
-                   task_states={result: state1.result[db_state]})
+    state2 = f.run(parameters=dict(nrows=1000, runtime=pendulum.now('utc')))
+    ## similarly, providing input state omits running `daily_db_refresh` even
+    ## without cache arguments in the task decorator
+    state3 = f.run(parameters=dict(nrows=1000, runtime=pendulum.now('utc')),
+                  task_states={db_state: state1.result[db_state]})
     ```
     """
 
@@ -229,9 +238,12 @@ def partial_inputs_only(validate_on: Iterable[str] = None,) -> Callable:
         ans = add(1, 2, rand_bool())
 
     state1 = f.run()
-    ## the second run will use the cache contained within state1.result[ans]
+    ## the second run will use the cache contained within prefect.context.caches
     ## even though `rand_bool` might change
-    state2 = f.run(task_states={result: state1.result[ans]})
+    state2 = f.run()
+    ## similarly, providing input state omits running `add` even
+    ## without cache arguments in the task decorator:
+    state3 = f.run(task_states={ans: state1.result[ans]})
     ```
     """
 

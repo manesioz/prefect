@@ -8,6 +8,7 @@ from prefect.utilities.serialization import (
     FunctionReference,
     JSONCompatible,
     ObjectSchema,
+    OneOfSchema,
     StatefulFunctionReference,
     from_qualified_name,
     to_qualified_name,
@@ -117,7 +118,7 @@ class TaskSchema(TaskMethodsMixin, ObjectSchema):
 
 class ParameterSchema(TaskMethodsMixin, ObjectSchema):
     class Meta:
-        object_class = lambda: prefect.core.task.Parameter  # type: ignore
+        object_class = lambda: prefect.core.parameter.Parameter  # type: ignore
         exclude_fields = ["type", "outputs", "slug"]
 
     type = fields.Function(lambda task: to_qualified_name(type(task)), lambda x: x)
